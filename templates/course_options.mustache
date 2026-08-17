@@ -1,0 +1,103 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
+    @copyright  2026 Jon Bolton, Simon Lewis
+    @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+}}
+{{!
+    @template mod_pathway/course_options
+
+    Options for a pathway activity, rendered inline on the course page.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * none
+
+    Context variables required for this template:
+    * cmid int Course module id
+    * sesskey string Session key
+    * actionurl string URL the form posts to
+    * returnurl string URL to return to after saving
+    * images bool Whether to render image tiles rather than a text list
+    * sizeclass string CSS modifier for tile size (pathway-tiles-sm|md|lg|xl)
+    * canchoose bool Whether the current user may submit
+    * Each option renders as a submit button, so one click records the choice.
+    * options array Each with id, text, imageurl, hasimage, initial, selected, full, disabled, showcount, count
+
+    Example context (json):
+    {
+        "cmid": 42,
+        "sesskey": "abc123",
+        "actionurl": "https://example.com/mod/pathway/view.php",
+        "returnurl": "https://example.com/course/view.php?id=2",
+        "images": true,
+        "sizeclass": "pathway-tiles-md",
+        "canchoose": true,
+        "hasoptions": true,
+        "options": [
+            {"id": 1, "text": "Rescue", "hasimage": false, "initial": "R", "selected": true,
+             "full": false, "disabled": false, "showcount": true, "count": 4}
+        ]
+    }
+}}
+{{#hasoptions}}
+<form method="post" action="{{actionurl}}" class="pathway-courseform">
+    <input type="hidden" name="id" value="{{cmid}}">
+    <input type="hidden" name="sesskey" value="{{sesskey}}">
+    <input type="hidden" name="returnurl" value="{{returnurl}}">
+
+    {{#images}}
+    <div class="pathway-tiles {{sizeclass}}">
+        {{#options}}
+        <button type="submit" name="courseoptionid" value="{{id}}"
+            class="pathway-tile {{#selected}}pathway-selected{{/selected}} {{#full}}pathway-full{{/full}}"
+            {{#selected}}aria-current="true"{{/selected}} {{#disabled}}disabled{{/disabled}}>
+            <span class="pathway-thumb">
+                {{#hasimage}}<img src="{{imageurl}}" alt="">{{/hasimage}}
+                {{^hasimage}}<span class="pathway-initial" aria-hidden="true">{{initial}}</span>{{/hasimage}}
+            </span>
+            <span class="pathway-label">{{text}}</span>
+            {{#selected}}<span class="sr-only visually-hidden">{{#str}}selected, mod_pathway{{/str}}</span>{{/selected}}
+            {{#showcount}}<span class="pathway-count badge badge-secondary text-bg-secondary">{{count}}</span>{{/showcount}}
+        </button>
+        {{/options}}
+    </div>
+    {{/images}}
+
+    {{^images}}
+    <div class="pathway-list">
+        {{#options}}
+        <button type="submit" name="courseoptionid" value="{{id}}"
+            class="btn btn-sm mr-1 me-1 mb-1 {{#selected}}btn-primary{{/selected}}{{^selected}}btn-outline-secondary{{/selected}}"
+            {{#selected}}aria-current="true"{{/selected}} {{#disabled}}disabled{{/disabled}}>
+            {{text}}
+            {{#selected}}<span class="sr-only visually-hidden">{{#str}}selected, mod_pathway{{/str}}</span>{{/selected}}
+            {{#showcount}}<span class="pathway-count badge badge-light text-bg-light">{{count}}</span>{{/showcount}}
+        </button>
+        {{/options}}
+    </div>
+    {{/images}}
+
+    {{#canchoose}}
+    <p class="text-muted small mb-0 mt-1 pathway-instruction {{#images}}pathway-instruction-centred{{/images}}">{{#str}}clicktochoose, mod_pathway{{/str}}</p>
+    {{/canchoose}}
+    {{^canchoose}}
+    <p class="text-muted small mb-0 pathway-instruction {{#images}}pathway-instruction-centred{{/images}}">{{#str}}cannotchange, mod_pathway{{/str}}</p>
+    {{/canchoose}}
+</form>
+{{/hasoptions}}
