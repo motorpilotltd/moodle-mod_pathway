@@ -5,7 +5,7 @@ When a user selects one, they can be added automatically to the cohort and/or
 course group mapped to that option. Later parts of the course can then be
 opened up based on the selection, either through activity completion or with
 the companion availability plugin
-([availability_pathway](../moodle-availability_pathway)).
+([availability_pathway](https://github.com/motorpilotltd/moodle-availability_pathway)).
 
 ## How it works
 
