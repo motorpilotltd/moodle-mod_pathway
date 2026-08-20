@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- CI workflow now runs only for pushes to main (a tag push previously re-ran
+  the whole matrix on an already-tested commit), actions/checkout is bumped
+  to v5.1.0 (current node24 runtime), and Dependabot watches the pinned
+  actions weekly so future runtime deprecations arrive as pull requests.
+
 ## [1.0.0-alpha.2] - 2026-08-20
 
 ### Fixed
