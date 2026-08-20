@@ -213,7 +213,7 @@ final class image_processor_test extends \advanced_testcase {
         // Install has already registered it in the test site.
         $this->assertArrayHasKey('webp', get_mimetypes_array());
 
-        \core_filetypes::remove_type('webp');
+        \core_filetypes::delete_type('webp');
         $this->assertArrayNotHasKey('webp', get_mimetypes_array());
 
         image_processor::ensure_webp_filetype();
@@ -238,7 +238,7 @@ final class image_processor_test extends \advanced_testcase {
 
         // An admin removing the file type must disable conversion, or the
         // processor would write files the site's own forms then reject.
-        \core_filetypes::remove_type('webp');
+        \core_filetypes::delete_type('webp');
         $this->assertFalse(image_processor::webp_supported());
 
         image_processor::ensure_webp_filetype();
