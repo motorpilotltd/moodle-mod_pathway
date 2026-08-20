@@ -15,18 +15,20 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Version details for mod_pathway.
+ * Install steps for mod_pathway.
  *
  * @package    mod_pathway
  * @copyright  2026 Jon Bolton, Simon Lewis
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
-$plugin->component = 'mod_pathway';
-$plugin->version   = 2026082000;
-$plugin->requires  = 2022112800; // Moodle 4.1.
-$plugin->supported = [401, 502]; // Moodle 4.1 to 5.2.
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '1.0.0-alpha.2';
+/**
+ * Run the install steps.
+ *
+ * @return void
+ */
+function xmldb_pathway_install(): void {
+    // Core does not know the webp extension, so the option image processor's
+    // WebP output would fail the filemanager's accepted-types validation.
+    \mod_pathway\local\image_processor::ensure_webp_filetype();
+}

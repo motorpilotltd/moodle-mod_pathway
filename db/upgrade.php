@@ -43,5 +43,14 @@ function xmldb_pathway_upgrade(int $oldversion): bool {
         upgrade_mod_savepoint(true, 2026081801, 'pathway');
     }
 
+    if ($oldversion < 2026082000) {
+        // Register webp as a site file type: without it the processor's WebP
+        // output fails the option image filemanager's accepted-types
+        // validation the next time the activity form is saved.
+        \mod_pathway\local\image_processor::ensure_webp_filetype();
+
+        upgrade_mod_savepoint(true, 2026082000, 'pathway');
+    }
+
     return true;
 }

@@ -123,11 +123,37 @@ final class image_processor_test extends \advanced_testcase {
         $this->store_image($contextid, $optionid, 'photo.png', $this->make_png(1200, 800));
         image_processor::process_option($contextid, $optionid);
 
+        // Without WebP, PNG stays PNG so transparency can never be lost.
         $file = $this->get_area_file($contextid, $optionid);
-        $this->assertSame('photo.jpg', $file->get_filename());
+        $this->assertSame('photo.png', $file->get_filename());
+        $this->assertSame('image/png', $file->get_mimetype());
         $info = $file->get_imageinfo();
         $this->assertEquals(512, $info['width']);
         $this->assertEquals(341, $info['height']);
+    }
+
+    public function test_png_transparency_survives_resize(): void {
+        $this->resetAfterTest();
+        set_config('usewebp', '0', 'mod_pathway');
+        [$contextid, $optionid] = $this->create_environment();
+
+        $image = imagecreatetruecolor(800, 800);
+        imagealphablending($image, false);
+        imagesavealpha($image, true);
+        imagefilledrectangle($image, 0, 0, 800, 800, imagecolorallocatealpha($image, 0, 0, 0, 127));
+        ob_start();
+        imagepng($image);
+        imagedestroy($image);
+        $this->store_image($contextid, $optionid, 'clear.png', ob_get_clean());
+
+        image_processor::process_option($contextid, $optionid);
+
+        $file = $this->get_area_file($contextid, $optionid);
+        $this->assertSame('clear.png', $file->get_filename());
+        $resized = imagecreatefromstring($file->get_content());
+        $alpha = (imagecolorat($resized, 0, 0) >> 24) & 0x7F;
+        imagedestroy($resized);
+        $this->assertSame(127, $alpha);
     }
 
     public function test_same_format_resize_keeps_the_name(): void {
@@ -179,6 +205,44 @@ final class image_processor_test extends \advanced_testcase {
         $file = $this->get_area_file($contextid, $optionid);
         $this->assertSame('anim.gif', $file->get_filename());
         $this->assertSame($original->get_contenthash(), $file->get_contenthash());
+    }
+
+    public function test_webp_filetype_registration(): void {
+        $this->resetAfterTest();
+
+        // Install has already registered it in the test site.
+        $this->assertArrayHasKey('webp', get_mimetypes_array());
+
+        \core_filetypes::remove_type('webp');
+        $this->assertArrayNotHasKey('webp', get_mimetypes_array());
+
+        image_processor::ensure_webp_filetype();
+        $types = get_mimetypes_array();
+        $this->assertArrayHasKey('webp', $types);
+        $this->assertSame('image/webp', $types['webp']['type']);
+        $this->assertContains('web_image', $types['webp']['groups']);
+
+        // A second call must leave an existing definition alone.
+        image_processor::ensure_webp_filetype();
+        $this->assertArrayHasKey('webp', get_mimetypes_array());
+    }
+
+    public function test_webp_requires_known_filetype(): void {
+        $this->resetAfterTest();
+        $info = function_exists('gd_info') ? gd_info() : [];
+        if (!function_exists('imagewebp') || empty($info['WebP Support'])) {
+            $this->markTestSkipped('WebP write support is not available.');
+        }
+
+        $this->assertTrue(image_processor::webp_supported());
+
+        // An admin removing the file type must disable conversion, or the
+        // processor would write files the site's own forms then reject.
+        \core_filetypes::remove_type('webp');
+        $this->assertFalse(image_processor::webp_supported());
+
+        image_processor::ensure_webp_filetype();
+        $this->assertTrue(image_processor::webp_supported());
     }
 
     public function test_processing_can_be_disabled(): void {

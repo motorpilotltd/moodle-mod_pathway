@@ -19,9 +19,10 @@ the companion availability plugin
   so a choice can be made without opening the activity. Tile size (small to
   extra large) is set per activity; tiles centre under the activity name.
 - Option images are resized on upload (512px longest edge) and converted to
-  WebP where the server's GD supports it, JPEG otherwise. Best effort: an
-  image that cannot be processed is stored exactly as uploaded. Two site
-  settings control this (resize on/off, WebP on/off); animated GIFs are left
+  WebP where the server's GD supports it. Without WebP, PNGs stay PNG so
+  transparency survives; other formats become JPEG. Best effort: an image
+  that cannot be processed is stored exactly as uploaded. Two site settings
+  control this (resize on/off, WebP on/off); animated GIFs are left
   untouched to preserve the animation.
 - A response summary (counts only) can be shown to participants. Only users
   with the `mod/pathway:readresponses` capability see anything beyond counts.
@@ -65,6 +66,19 @@ with them.
 - Moodle 4.1 or later (tested against 4.1 to 5.2). The 4.1 floor also caps
   the code at PHP 7.4 syntax; it exists for backwards compatibility until
   all installs are on Moodle 4.5 or greater, at which point the floor rises.
+
+### A note on WebP
+
+Moodle core does not know the webp file extension, so installing the plugin
+registers it as a site file type (visible under Site administration > Server >
+File types) unless something has already defined it. Without this, converted
+images would fail the image picker's file type validation the next time the
+activity was edited. The type is deliberately left in place if the plugin is
+uninstalled, since stored content may rely on it. Uploaded files are always
+served through Moodle with the correct mime type, so no web server MIME
+configuration is needed; the one exception is IIS with request filtering
+locked to an extension allowlist, where `.webp` needs adding to the allowlist
+(or turn the WebP site setting off).
 
 ## Installation
 
