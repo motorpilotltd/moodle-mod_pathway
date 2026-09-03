@@ -34,7 +34,7 @@
     * actionurl string URL the form posts to
     * returnurl string URL to return to after saving
     * images bool Whether to render image tiles rather than a text list
-    * sizeclass string CSS modifier for tile size (pathway-tiles-sm|md|lg|xl)
+    * sizeclass string CSS size modifier (pathway-tiles-sm|md|lg|xl), applied to tiles or list
     * canchoose bool Whether the current user may submit
     * Each option renders as a submit button, so one click records the choice.
     * options array Each with id, text, imageurl, hasimage, initial, selected, full, disabled, showcount, count
@@ -80,10 +80,10 @@
     {{/images}}
 
     {{^images}}
-    <div class="pathway-list">
+    <div class="pathway-list {{sizeclass}}">
         {{#options}}
         <button type="submit" name="courseoptionid" value="{{id}}"
-            class="btn btn-sm mr-1 me-1 mb-1 {{#selected}}btn-primary{{/selected}}{{^selected}}btn-outline-secondary{{/selected}}"
+            class="btn mr-1 me-1 mb-1 {{#selected}}btn-primary{{/selected}}{{^selected}}btn-outline-secondary{{/selected}}"
             {{#selected}}aria-current="true"{{/selected}} {{#disabled}}disabled{{/disabled}}>
             {{text}}
             {{#selected}}<span class="sr-only visually-hidden">{{#str}}selected, mod_pathway{{/str}}</span>{{/selected}}

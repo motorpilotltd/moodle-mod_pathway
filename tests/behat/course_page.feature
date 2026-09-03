@@ -15,10 +15,11 @@ Feature: Choose a pathway option directly from the course page
       | user     | course | role    |
       | student1 | C1     | student |
     And the following "activities" exist:
-      | activity | course | name        | idnumber | options      | displaymode | allowupdate |
-      | pathway  | C1     | Pick a track | PT1     | Alpha, Beta  | 1           | 1           |
-      | pathway  | C1     | Final track  | PT2     | One, Two     | 1           | 0           |
-      | pathway  | C1     | Tile track   | PT3     | Gamma, Delta | 2           | 1           |
+      | activity | course | name         | idnumber | intro                     | options      | displaymode | allowupdate |
+      | pathway  | C1     | Pick a track | PT1      |                           | Alpha, Beta  | 1           | 1           |
+      | pathway  | C1     | Final track  | PT2      |                           | One, Two     | 1           | 0           |
+      | pathway  | C1     | Tile track   | PT3      |                           | Gamma, Delta | 2           | 1           |
+      | pathway  | C1     | Described    | PT4      | Choose your specialty now | Cats, Dogs   | 1           | 1           |
 
   Scenario: A student chooses from the option buttons on the course page
     Given I am on the "C1" "Course" page logged in as "student1"
@@ -41,3 +42,9 @@ Feature: Choose a pathway option directly from the course page
     Given I am on the "C1" "Course" page logged in as "student1"
     When I press "Gamma"
     Then I should see "Your choice has been saved."
+
+  Scenario: The activity description shows on the course page with the options
+    Given I am on the "C1" "Course" page logged in as "student1"
+    Then I should see "Choose your specialty now"
+    And I should see "Cats"
+    And I should see "Dogs"

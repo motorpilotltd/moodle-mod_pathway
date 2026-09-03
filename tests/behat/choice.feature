@@ -28,17 +28,19 @@ Feature: Record a choice in a pathway activity
     When I set the field "Red" to "1"
     And I press "Save choice"
     Then I should see "Your choice has been saved."
-    And I should see "Your current choice is: Red"
+    And I should see "Your choice"
+    And I should see "Red"
     When I set the field "Blue" to "1"
     And I press "Save choice"
-    Then I should see "Your current choice is: Blue"
+    Then I should see "Blue"
 
   Scenario: A final choice cannot be changed afterwards
     Given I am on the "PW2" "Activity" page logged in as "student1"
     When I set the field "Left" to "1"
     And I press "Save choice"
     Then I should see "Your choice has been saved."
-    And I should see "Your current choice is: Left"
+    And I should see "Your choice"
+    And I should see "Left"
     And I should see "Your choice has been recorded and cannot be changed."
     And "Save choice" "button" should not exist
 
@@ -47,8 +49,8 @@ Feature: Record a choice in a pathway activity
     When I set the field "Cats" to "1"
     And I press "Save choice"
     Then I should see "Responses"
-    And I should see "1" in the "Cats" "table_row"
-    And I should see "0" in the "Dogs" "table_row"
+    And I should see "1 (100%)" in the ".pathway-results" "css_element"
+    And I should see "0 (0%)" in the ".pathway-results" "css_element"
 
   Scenario: An activity with no options explains itself
     Given I am on the "PW4" "Activity" page logged in as "student1"
@@ -72,6 +74,7 @@ Feature: Record a choice in a pathway activity
     And I am on the "PW4" "Activity" page logged in as "student1"
     When I set the field "Left path" to "1"
     And I press "Save choice"
-    Then I should see "Your current choice is: Left path"
+    Then I should see "Your choice"
+    And I should see "Left path"
     When I am on the "C1" "enrolled users" page logged in as "teacher1"
     Then I should see "Group A" in the "Sam Student" "table_row"

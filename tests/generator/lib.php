@@ -74,6 +74,7 @@ class mod_pathway_generator extends testing_module_generator {
             'managegroups' => 1,
             'showresults' => 0,
             'displaymode' => 0,
+            'tilesize' => 1,
         ];
         foreach ($defaults as $field => $value) {
             if (!isset($record->$field)) {

@@ -65,8 +65,15 @@ final class backup_restore_test extends \advanced_testcase {
             ],
         ]);
         $cm = get_fast_modinfo($course)->get_cm($instance->cmid);
-
-        $newcm = duplicate_module($course, $cm);
+        if (
+            class_exists('\core_courseformat\formatactions')
+                && method_exists(\core_courseformat\formatactions::cm($course->id), 'duplicate')
+        ) {
+            // Moodle 5.2 deprecated duplicate_module() in favour of this.
+            $newcm = \core_courseformat\formatactions::cm($course->id)->duplicate($cm->id);
+        } else {
+            $newcm = duplicate_module($course, $cm);
+        }
 
         // Settings, including the tile size, come across with the duplicate.
         $this->assertEquals(2, $DB->get_field('pathway', 'tilesize', ['id' => $newcm->instance]));
