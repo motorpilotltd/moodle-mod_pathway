@@ -162,6 +162,60 @@ final class manager_test extends \advanced_testcase {
         $this->assertEquals($first->timemodified, $second->timemodified);
     }
 
+    /**
+     * If an admin removes the user from the cohort by hand, re-saving the same
+     * option should put them back. Regression test for the reconcile path.
+     *
+     * @covers \mod_pathway\local\manager::save_answer
+     * @covers \mod_pathway\local\manager::reconcile_membership
+     */
+    public function test_resaving_same_option_restores_removed_membership(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/cohort/lib.php');
+        require_once($CFG->dirroot . '/group/lib.php');
+        $this->resetAfterTest();
+        [, $user, $cohort, $group, $instance, $cm, $options] = $this->create_environment();
+
+        // First choice adds the user to the mapped cohort and group.
+        manager::save_answer($instance, $cm, (int) $options[0]->id, $user->id);
+        $this->assertTrue($DB->record_exists(
+            'cohort_members',
+            ['cohortid' => $cohort->id, 'userid' => $user->id]
+        ));
+        $this->assertTrue(groups_is_member($group->id, $user->id));
+
+        // An admin removes them from both by hand.
+        cohort_remove_member($cohort->id, $user->id);
+        groups_remove_member($group->id, $user->id);
+        $this->assertFalse($DB->record_exists(
+            'cohort_members',
+            ['cohortid' => $cohort->id, 'userid' => $user->id]
+        ));
+        $this->assertFalse(groups_is_member($group->id, $user->id));
+
+        // Re-saving the same option should put them back into both.
+        manager::save_answer($instance, $cm, (int) $options[0]->id, $user->id);
+        $this->assertTrue(
+            $DB->record_exists(
+                'cohort_members',
+                ['cohortid' => $cohort->id, 'userid' => $user->id]
+            ),
+            'Re-saving the same option should restore cohort membership'
+        );
+        $this->assertTrue(
+            groups_is_member($group->id, $user->id),
+            'Re-saving the same option should restore group membership'
+        );
+
+        // Ownership is reclaimed, so a later change of choice removes them again.
+        $answer = $DB->get_record(
+            'pathway_answer',
+            ['pathwayid' => $instance->id, 'userid' => $user->id]
+        );
+        $this->assertEquals(1, $answer->cohortadded);
+        $this->assertEquals(1, $answer->groupadded);
+    }
+
     public function test_full_option_rejects_new_users(): void {
         $this->resetAfterTest();
 
@@ -337,5 +391,143 @@ final class manager_test extends \advanced_testcase {
         $counts = manager::get_response_counts($instance->id);
         $this->assertEquals(2, $counts[$options[0]->id]);
         $this->assertArrayNotHasKey($options[1]->id, $counts);
+    }
+
+    /**
+     * Deleting a choice with membership removal gives back owned memberships.
+     *
+     * @covers \mod_pathway\local\manager::delete_answer
+     */
+    public function test_delete_answer_removes_owned_memberships(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [, $user, $cohort, $group, $instance, $cm, $options] = $this->create_environment();
+
+        manager::save_answer($instance, $cm, (int) $options[0]->id, $user->id);
+        $this->assertTrue($DB->record_exists(
+            'cohort_members',
+            ['cohortid' => $cohort->id, 'userid' => $user->id]
+        ));
+
+        $deleted = manager::delete_answer($instance, $cm, $user->id, true);
+
+        $this->assertTrue($deleted);
+        $this->assertFalse($DB->record_exists(
+            'pathway_answer',
+            ['pathwayid' => $instance->id, 'userid' => $user->id]
+        ));
+        $this->assertFalse($DB->record_exists(
+            'cohort_members',
+            ['cohortid' => $cohort->id, 'userid' => $user->id]
+        ));
+    }
+
+    /**
+     * Deleting a choice while keeping memberships leaves them in place.
+     *
+     * @covers \mod_pathway\local\manager::delete_answer
+     */
+    public function test_delete_answer_can_keep_memberships(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [, $user, $cohort, $group, $instance, $cm, $options] = $this->create_environment();
+
+        manager::save_answer($instance, $cm, (int) $options[0]->id, $user->id);
+
+        manager::delete_answer($instance, $cm, $user->id, false);
+
+        $this->assertFalse($DB->record_exists(
+            'pathway_answer',
+            ['pathwayid' => $instance->id, 'userid' => $user->id]
+        ));
+        // Membership stays because removal was declined.
+        $this->assertTrue($DB->record_exists(
+            'cohort_members',
+            ['cohortid' => $cohort->id, 'userid' => $user->id]
+        ));
+    }
+
+    /**
+     * Deleting when there is no choice is a no-op that reports false.
+     *
+     * @covers \mod_pathway\local\manager::delete_answer
+     */
+    public function test_delete_answer_with_no_choice_returns_false(): void {
+        $this->resetAfterTest();
+        [, $user, , , $instance, $cm] = $this->create_environment();
+
+        $this->assertFalse(manager::delete_answer($instance, $cm, $user->id, true));
+    }
+
+    /**
+     * Bulk assign puts several users onto an option and reports the outcome.
+     *
+     * @covers \mod_pathway\local\manager::bulk_assign
+     */
+    public function test_bulk_assign_assigns_and_reports(): void {
+        global $DB;
+        $this->resetAfterTest();
+        [$course, , $cohort, , $instance, $cm, $options] = $this->create_environment();
+
+        $gen = $this->getDataGenerator();
+        $u1 = $gen->create_and_enrol($course, 'student');
+        $u2 = $gen->create_and_enrol($course, 'student');
+
+        $counts = manager::bulk_assign($instance, $cm, (int) $options[0]->id, [$u1->id, $u2->id]);
+
+        $this->assertEquals(2, $counts['assigned']);
+        $this->assertEquals(2, $counts['cohortadded']);
+        $this->assertEquals(0, $counts['alreadymember']);
+        $this->assertTrue($DB->record_exists(
+            'cohort_members',
+            ['cohortid' => $cohort->id, 'userid' => $u1->id]
+        ));
+    }
+
+    /**
+     * A user already in the mapped cohort is assigned but not counted as added.
+     *
+     * @covers \mod_pathway\local\manager::bulk_assign
+     */
+    public function test_bulk_assign_existing_member_keeps_ownership_flag_clear(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/cohort/lib.php');
+        $this->resetAfterTest();
+        [$course, , $cohort, , $instance, $cm, $options] = $this->create_environment();
+
+        $gen = $this->getDataGenerator();
+        $user = $gen->create_and_enrol($course, 'student');
+        cohort_add_member($cohort->id, $user->id);
+
+        $counts = manager::bulk_assign($instance, $cm, (int) $options[0]->id, [$user->id]);
+
+        $this->assertEquals(1, $counts['assigned']);
+        $this->assertEquals(0, $counts['cohortadded']);
+        $this->assertEquals(1, $counts['alreadymember']);
+
+        $answer = $DB->get_record(
+            'pathway_answer',
+            ['pathwayid' => $instance->id, 'userid' => $user->id]
+        );
+        $this->assertEquals(0, $answer->cohortadded);
+    }
+
+    /**
+     * The per-user answer list returns the chooser and their option.
+     *
+     * @covers \mod_pathway\local\manager::get_answers_with_users
+     */
+    public function test_get_answers_with_users(): void {
+        $this->resetAfterTest();
+        [, $user, , , $instance, $cm, $options] = $this->create_environment();
+
+        manager::save_answer($instance, $cm, (int) $options[0]->id, $user->id);
+
+        $rows = manager::get_answers_with_users($instance->id);
+
+        $this->assertCount(1, $rows);
+        $row = reset($rows);
+        $this->assertEquals($user->id, $row->userid);
+        $this->assertEquals('Red', $row->optiontext);
     }
 }

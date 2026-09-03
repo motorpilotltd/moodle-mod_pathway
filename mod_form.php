@@ -89,7 +89,9 @@ class mod_pathway_mod_form extends moodleform_mod {
         ]);
         $mform->addHelpButton('tilesize', 'tilesize', 'mod_pathway');
         $mform->setDefault('tilesize', course_options::SIZE_MEDIUM);
-        $mform->hideIf('tilesize', 'displaymode', 'neq', course_options::DISPLAY_IMAGES);
+        // Size applies to both the list (button size) and image (tile size)
+        // displays, so it is hidden only when the display is link-only.
+        $mform->hideIf('tilesize', 'displaymode', 'eq', course_options::DISPLAY_LINK);
 
         $this->add_option_elements($mform);
 

@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_pathway';
-$plugin->version   = 2026082000;
+$plugin->version   = 2026090301;
 $plugin->requires  = 2022112800; // Moodle 4.1.
 $plugin->supported = [401, 502]; // Moodle 4.1 to 5.2.
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '1.0.0-alpha.2';
+$plugin->release   = '1.0.0-alpha.3';

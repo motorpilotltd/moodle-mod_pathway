@@ -33,6 +33,8 @@ $id = required_param('id', PARAM_INT);
 $courseoptionid = optional_param('courseoptionid', 0, PARAM_INT);
 $returnurl = optional_param('returnurl', '', PARAM_LOCALURL);
 $confirm = optional_param('confirm', 0, PARAM_BOOL);
+$action = optional_param('action', '', PARAM_ALPHA);
+$removemembership = optional_param('removemembership', 1, PARAM_BOOL);
 
 [$course, $cm] = get_course_and_cm_from_cmid($id, 'pathway');
 $instance = $DB->get_record('pathway', ['id' => $cm->instance], '*', MUST_EXIST);
@@ -63,6 +65,34 @@ $locked = $current && empty($instance->allowupdate);
 
 $menu = manager::get_option_menu($instance->id, $USER->id);
 $showtiles = (int) $instance->displaymode === course_options::DISPLAY_IMAGES;
+
+$candeleteown = $current
+    && !empty($instance->allowupdate)
+    && has_capability('mod/pathway:deleteownchoice', $context);
+
+// Delete the current user's own choice (learner "clear my choice").
+if ($action === 'delete' && $candeleteown) {
+    require_sesskey();
+
+    $backurl = new moodle_url('/mod/pathway/view.php', ['id' => $cm->id]);
+
+    if (!$confirm) {
+        echo $OUTPUT->header();
+        echo $OUTPUT->heading(format_string($instance->name));
+        // Offer the choice of whether to also drop the mapped memberships.
+        echo pathway_render_delete_confirm($instance, $cm, $USER->id, $backurl, false);
+        echo $OUTPUT->footer();
+        exit;
+    }
+
+    manager::delete_answer($instance, $cm, $USER->id, (bool) $removemembership);
+    redirect(
+        $backurl,
+        get_string('choicedeleted', 'mod_pathway'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+}
 
 // A submission from the inline course page display, which posts a plain form
 // rather than going through the moodleform below.
@@ -147,45 +177,112 @@ if ($canchoose && !$locked && !empty($menu) && !$showtiles) {
 
 echo $OUTPUT->header();
 
-if (trim(strip_tags($instance->intro))) {
-    echo $OUTPUT->box(format_module_intro('pathway', $instance, $cm->id), 'generalbox', 'intro');
-}
+// The activity intro is rendered by the theme from the activity record set
+// above, so it is deliberately not echoed again here.
+
+echo html_writer::start_div('pathway-view');
 
 if (empty($menu)) {
     echo $OUTPUT->notification(get_string('nooptions', 'mod_pathway'), 'info');
-} else if ($current) {
-    $chosen = $DB->get_field('pathway_option', 'text', ['id' => $current->optionid]);
-    echo $OUTPUT->notification(
-        get_string('alreadychosen', 'mod_pathway', format_string($chosen)),
-        'info'
-    );
+} else {
+    // Current choice, shown as a highlighted panel rather than a plain notice.
+    if ($current) {
+        $chosen = $DB->get_field('pathway_option', 'text', ['id' => $current->optionid]);
+        echo html_writer::start_div('pathway-current');
+        echo html_writer::span(
+            $OUTPUT->pix_icon('i/valid', '', 'moodle', ['class' => 'pathway-current-icon']),
+            'pathway-current-tick'
+        );
+        echo html_writer::start_div('pathway-current-body');
+        echo html_writer::div(get_string('yourchoice', 'mod_pathway'), 'pathway-current-label');
+        echo html_writer::div(format_string($chosen), 'pathway-current-value');
+        echo html_writer::end_div();
+
+        // Learner "clear my choice", shown only when updating is allowed.
+        if ($candeleteown) {
+            $deleteurl = new moodle_url('/mod/pathway/view.php', [
+                'id' => $cm->id,
+                'action' => 'delete',
+                'sesskey' => sesskey(),
+            ]);
+            echo html_writer::link(
+                $deleteurl,
+                get_string('clearchoice', 'mod_pathway'),
+                ['class' => 'btn btn-outline-secondary btn-sm pathway-clear']
+            );
+        }
+
+        echo html_writer::end_div();
+    }
+
+    // The choice controls, wrapped in a card so the page has some structure.
+    if ($locked) {
+        echo $OUTPUT->notification(get_string('cannotchange', 'mod_pathway'), 'info');
+    } else if (!$canchoose) {
+        echo $OUTPUT->notification(get_string('nopermissiontochoose', 'mod_pathway'), 'warning');
+    } else {
+        echo html_writer::start_div('pathway-card');
+        echo html_writer::tag(
+            'h3',
+            get_string($current ? 'changeyourchoice' : 'makeyourchoice', 'mod_pathway'),
+            ['class' => 'pathway-card-title']
+        );
+
+        if ($showtiles) {
+            $renderable = new course_options(
+                $instance,
+                $cm,
+                $USER->id,
+                new moodle_url('/mod/pathway/view.php', ['id' => $cm->id])
+            );
+            echo $OUTPUT->render($renderable);
+        } else if ($form) {
+            $form->display();
+        }
+        echo html_writer::end_div();
+    }
 }
 
-if ($locked) {
-    echo $OUTPUT->notification(get_string('cannotchange', 'mod_pathway'), 'info');
-} else if (!$canchoose) {
-    echo $OUTPUT->notification(get_string('nopermissiontochoose', 'mod_pathway'), 'warning');
-} else if ($showtiles) {
-    $renderable = new course_options(
-        $instance,
-        $cm,
-        $USER->id,
-        new moodle_url('/mod/pathway/view.php', ['id' => $cm->id])
-    );
-    echo $OUTPUT->render($renderable);
-} else if ($form) {
-    $form->display();
-}
-
+// Response summary, for those allowed to see it, styled as its own card.
 if (!empty($instance->showresults) || has_capability('mod/pathway:readresponses', $context)) {
     $counts = manager::get_response_counts($instance->id);
-    $table = new html_table();
-    $table->head = [get_string('optionheading', 'mod_pathway'), get_string('responses', 'mod_pathway')];
+    $total = array_sum($counts);
+
+    echo html_writer::start_div('pathway-card pathway-results');
+    echo html_writer::tag('h3', get_string('responses', 'mod_pathway'), ['class' => 'pathway-card-title']);
+
     foreach (manager::get_options($instance->id) as $option) {
-        $table->data[] = [format_string($option->text), $counts[$option->id] ?? 0];
+        $count = $counts[$option->id] ?? 0;
+        $percent = $total > 0 ? round(($count / $total) * 100) : 0;
+
+        echo html_writer::start_div('pathway-result-row');
+        echo html_writer::start_div('pathway-result-head');
+        echo html_writer::span(format_string($option->text), 'pathway-result-name');
+        echo html_writer::span(
+            get_string('responsecount', 'mod_pathway', (object) ['count' => $count, 'percent' => $percent]),
+            'pathway-result-count'
+        );
+        echo html_writer::end_div();
+        echo html_writer::start_div('pathway-result-bar');
+        echo html_writer::div('', 'pathway-result-fill', ['style' => 'width: ' . $percent . '%;']);
+        echo html_writer::end_div();
+        echo html_writer::end_div();
     }
-    echo $OUTPUT->heading(get_string('responses', 'mod_pathway'), 3);
-    echo html_writer::table($table);
+
+    if (has_capability('mod/pathway:readresponses', $context)) {
+        echo html_writer::div(
+            html_writer::link(
+                new moodle_url('/mod/pathway/responses.php', ['id' => $cm->id]),
+                get_string('manageresponses', 'mod_pathway'),
+                ['class' => 'btn btn-secondary btn-sm']
+            ),
+            'pathway-manage-link mt-2'
+        );
+    }
+
+    echo html_writer::end_div();
 }
+
+echo html_writer::end_div();
 
 echo $OUTPUT->footer();

@@ -155,7 +155,11 @@ function pathway_get_coursemodule_info(stdClass $coursemodule) {
     $info = new cached_cm_info();
     $info->name = $instance->name;
 
-    if ($coursemodule->showdescription) {
+    // When a course-page display mode is active, pathway_cm_info_view() renders
+    // the description together with the options, so leave content to it here to
+    // avoid the two callbacks overwriting each other. Only set the description
+    // content in link-only mode, where cm_info_view() does nothing.
+    if ($coursemodule->showdescription && empty($instance->displaymode)) {
         $info->content = format_module_intro('pathway', $instance, $coursemodule->id, false);
     }
 
@@ -195,8 +199,22 @@ function pathway_cm_info_view(cm_info $cm): void {
         return;
     }
 
+    $content = '';
+
+    // Show the description together with the options. get_coursemodule_info()
+    // deliberately does not set content when a display mode is active, so this
+    // is the single place the intro is emitted on the course page in that case.
+    if (!empty($instance->intro) && trim(strip_tags($instance->intro)) !== '') {
+        $content .= html_writer::div(
+            format_module_intro('pathway', $instance, $cm->id),
+            'pathway-courseintro'
+        );
+    }
+
     $renderable = new \mod_pathway\output\course_options($instance, $cm, $USER->id);
-    $cm->set_content($OUTPUT->render($renderable), true);
+    $content .= $OUTPUT->render($renderable);
+
+    $cm->set_content($content, true);
 }
 
 /**
@@ -314,4 +332,69 @@ function pathway_reset_userdata(stdClass $data): array {
 function pathway_reset_course_form_definition($mform): void {
     $mform->addElement('header', 'pathwayheader', get_string('modulenameplural', 'mod_pathway'));
     $mform->addElement('advcheckbox', 'reset_pathway_answers', get_string('responses', 'mod_pathway'));
+}
+
+/**
+ * Render the confirmation shown before a choice is deleted.
+ *
+ * Offers a yes/no on whether to also remove the cohort and group memberships
+ * this activity added, because removing a cohort membership can cascade into
+ * enrolment removal in other courses. Only offered when the choice actually
+ * owns a membership; otherwise a plain confirm is shown.
+ *
+ * @param stdClass $instance The pathway record.
+ * @param cm_info|stdClass $cm The course module.
+ * @param int $userid The user whose choice is being deleted.
+ * @param moodle_url $backurl Where "cancel" returns to.
+ * @param bool $teacher Whether a teacher is deleting another user's choice.
+ * @return string HTML.
+ */
+function pathway_render_delete_confirm(
+    stdClass $instance,
+    $cm,
+    int $userid,
+    moodle_url $backurl,
+    bool $teacher
+): string {
+    global $DB, $OUTPUT;
+
+    $answer = \mod_pathway\local\manager::get_answer($instance->id, $userid);
+    $ownsmembership = $answer && (!empty($answer->cohortadded) || !empty($answer->groupadded));
+
+    $base = [
+        'id' => $cm->id,
+        'action' => 'delete',
+        'confirm' => 1,
+        'sesskey' => sesskey(),
+    ];
+    if ($teacher) {
+        $base['userid'] = $userid;
+    }
+
+    $message = $teacher
+        ? get_string('confirmdeleteother', 'mod_pathway')
+        : get_string('confirmdeleteown', 'mod_pathway');
+
+    // When nothing is owned there is no membership decision to make.
+    if (!$ownsmembership) {
+        $continue = new moodle_url(
+            '/mod/pathway/' . ($teacher ? 'responses.php' : 'view.php'),
+            $base + ['removemembership' => 0]
+        );
+        return $OUTPUT->confirm($message, $continue, $backurl);
+    }
+
+    // Two explicit routes: delete and remove memberships, or delete and keep them.
+    $target = '/mod/pathway/' . ($teacher ? 'responses.php' : 'view.php');
+    $removeurl = new moodle_url($target, $base + ['removemembership' => 1]);
+    $keepurl = new moodle_url($target, $base + ['removemembership' => 0]);
+
+    $out = html_writer::tag('p', $message);
+    $out .= html_writer::tag('p', get_string('confirmdeletemembership', 'mod_pathway'));
+
+    $buttons = $OUTPUT->single_button($removeurl, get_string('deleteandremove', 'mod_pathway'), 'post');
+    $buttons .= $OUTPUT->single_button($keepurl, get_string('deleteandkeep', 'mod_pathway'), 'post');
+    $buttons .= $OUTPUT->single_button($backurl, get_string('cancel'), 'get');
+
+    return $OUTPUT->box($out . html_writer::div($buttons, 'pathway-confirm-buttons'), 'generalbox');
 }

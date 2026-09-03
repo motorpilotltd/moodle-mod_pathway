@@ -8,6 +8,30 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- A learner can clear their own choice (where changing is allowed), and a
+  teacher can delete any user's choice, both behind new capabilities
+  (`mod/pathway:deleteownchoice`, students; `mod/pathway:deleteanychoice`,
+  teachers and managers) with an explicit decision on whether memberships
+  this activity added are removed too. A `choice_deleted` event is logged.
+- A Manage responses page for teachers: who chose what (with whether the
+  membership is activity-owned), per-user delete, and bulk assignment of an
+  option to many users at once (behind its own `mod/pathway:bulkassign`
+  capability, editing teachers and managers) - each treated exactly as if
+  the user had chosen it themselves, respecting capacity limits and
+  ownership flags. Suspended accounts and suspended enrolments are not
+  offered for assignment.
+- Re-saving the option a user already holds now reconciles cohort and group
+  membership against the mapping, restoring a membership an admin removed by
+  hand (and reclaiming ownership) without ever removing anything.
+- The activity page is restyled: current choice as a highlighted panel, the
+  options in a card, and the response summary as percentage bars, with the
+  activity description shown once by the activity header. On the course
+  page the description now renders with the options, and the tile size
+  setting also controls button size for list display. Site-home (front
+  page) use is documented in the README.
+
 ### Changed
 
 - CI workflow now runs only for pushes to main (a tag push previously re-ran

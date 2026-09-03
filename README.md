@@ -98,3 +98,20 @@ Copyright © 2026 Jon Bolton, Simon Lewis
 
 GPL v3 or later. The activity icon is the diagram-project icon from
 [Font Awesome Free](https://fontawesome.com) (CC BY 4.0).
+
+## Using pathway on the site home
+
+Pathway works as a site-home (front page) activity, with two things to know:
+
+- **Choosing.** `mod/pathway:choose` is granted to the *Student* archetype
+  only. On the site home there are no enrolled students; logged-in users act
+  under the *Authenticated user* role. So to let people choose on the site
+  home, allow `mod/pathway:choose` on whichever role those users hold there —
+  usually "Authenticated user on frontpage" (Site administration > Users >
+  Permissions > Define roles). This is the deployer's call, and it is the same
+  step core Choice requires on the front page. The same applies to any
+  deployment where the intended choosers do not hold the Student role.
+- **Bulk assign.** There is no enrolment on the site home, so the bulk-assign
+  user list falls back to site users (capped at 500; use the search box for a
+  specific person) instead of enrolled users.
+

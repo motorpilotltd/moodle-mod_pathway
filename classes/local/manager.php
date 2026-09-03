@@ -251,6 +251,74 @@ class manager {
     }
 
     /**
+     * List the answers for an instance with the chooser's user record.
+     *
+     * @param int $instanceid The pathway instance id.
+     * @return array Objects with answer fields plus a ->user record and ->optiontext.
+     */
+    public static function get_answers_with_users(int $instanceid): array {
+        global $DB;
+
+        $userfields = \core_user\fields::for_name()->get_sql('u', false, '', '', true)->selects;
+
+        $sql = "SELECT a.id, a.optionid, a.userid, a.cohortadded, a.groupadded, a.timemodified,
+                       o.text AS optiontext, o.cohortid, o.groupid $userfields
+                  FROM {pathway_answer} a
+                  JOIN {pathway_option} o ON o.id = a.optionid
+                  JOIN {user} u ON u.id = a.userid
+                 WHERE a.pathwayid = :instanceid
+              ORDER BY o.sortorder ASC, u.lastname ASC, u.firstname ASC";
+
+        return $DB->get_records_sql($sql, ['instanceid' => $instanceid]);
+    }
+
+    /**
+     * Assign an option to many users at once, as a teacher action.
+     *
+     * Each user is routed through save_answer(), so cohort and group membership
+     * is created and owned exactly as if the user had chosen for themselves: a
+     * user already in the mapped cohort keeps cohortadded = 0 and the plugin
+     * will not later remove them. Capacity limits and locking are respected, so
+     * users beyond an option's limit are skipped rather than forced in.
+     *
+     * @param stdClass $instance The pathway record.
+     * @param cm_info|stdClass $cm The course module.
+     * @param int $optionid The option to assign.
+     * @param int[] $userids The users to assign it to.
+     * @return array Counts: assigned, skippedfull, cohortadded, alreadymember.
+     */
+    public static function bulk_assign(stdClass $instance, $cm, int $optionid, array $userids): array {
+        global $DB;
+
+        $result = ['assigned' => 0, 'skippedfull' => 0, 'cohortadded' => 0, 'alreadymember' => 0];
+
+        $hascohort = (int) $DB->get_field('pathway_option', 'cohortid', ['id' => $optionid]) > 0;
+
+        foreach (array_unique(array_map('intval', $userids)) as $userid) {
+            try {
+                self::save_answer($instance, $cm, $optionid, $userid);
+            } catch (\moodle_exception $e) {
+                // The only expected exception here is a full option.
+                $result['skippedfull']++;
+                continue;
+            }
+
+            $result['assigned']++;
+
+            if ($hascohort && !empty($instance->managecohorts)) {
+                $answer = self::get_answer($instance->id, $userid);
+                if ($answer && !empty($answer->cohortadded)) {
+                    $result['cohortadded']++;
+                } else {
+                    $result['alreadymember']++;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * Save a user's choice, sync cohort membership and update completion.
      *
      * @param stdClass $instance The pathway record.
@@ -269,7 +337,12 @@ class manager {
 
         $previous = self::get_answer($instance->id, $userid);
 
+        // Re-picking the current option is not a no-op: the cohort or group the
+        // option maps to may have been changed underneath us (for example an
+        // admin removing the user from the cohort by hand). Reconcile membership
+        // against the mapping rather than assuming the stored answer still holds.
         if ($previous && (int) $previous->optionid === $optionid) {
+            self::reconcile_membership($previous, $option, $instance, $userid);
             return;
         }
 
@@ -339,6 +412,60 @@ class manager {
     }
 
     /**
+     * Delete a user's choice, optionally giving back the memberships it created.
+     *
+     * Routes learner "clear my choice", teacher deletion and any future bulk
+     * removal through one path. Membership is only ever given back when
+     * $removemembership is true AND this activity owned it (the cohortadded /
+     * groupadded flags), so a membership the user held independently is never
+     * touched. Removing a cohort membership can cascade into enrolment removal
+     * elsewhere, which is why the caller decides whether to do it.
+     *
+     * @param stdClass $instance The pathway record.
+     * @param cm_info|stdClass $cm The course module.
+     * @param int $userid The user whose choice is being deleted.
+     * @param bool $removemembership Whether to remove memberships this activity added.
+     * @return bool True if a choice existed and was deleted, false if there was nothing to delete.
+     */
+    public static function delete_answer(stdClass $instance, $cm, int $userid, bool $removemembership = true): bool {
+        global $DB;
+
+        $answer = self::get_answer($instance->id, $userid);
+        if (!$answer) {
+            return false;
+        }
+
+        $optionid = (int) $answer->optionid;
+
+        $transaction = $DB->start_delegated_transaction();
+
+        if ($removemembership) {
+            self::unassign_cohort($answer, $instance);
+            self::unassign_group($answer, $instance);
+        }
+
+        $DB->delete_records('pathway_answer', ['id' => $answer->id]);
+
+        $transaction->allow_commit();
+
+        unset(self::$answercache[$instance->id . ':' . $userid]);
+
+        \mod_pathway\event\choice_deleted::create([
+            'objectid' => $answer->id,
+            'context' => context_module::instance($cm->id),
+            'relateduserid' => $userid,
+            'other' => [
+                'optionid' => $optionid,
+                'membershipremoved' => $removemembership ? 1 : 0,
+            ],
+        ])->trigger();
+
+        self::update_completion($instance, $cm, $userid);
+
+        return true;
+    }
+
+    /**
      * Whether an option still has capacity for this user.
      *
      * @param int $instanceid The pathway instance id.
@@ -358,6 +485,71 @@ class manager {
             'userid' => $userid,
         ]);
         return $used < $option->maxanswers;
+    }
+
+    /**
+     * Ensure the user's membership matches the option they have chosen.
+     *
+     * Called when a user re-saves the option they already hold. The stored
+     * answer may no longer reflect reality: an admin could have removed them
+     * from the cohort or group by hand, or the option's mapping could have
+     * changed. This re-adds them where needed and keeps the ownership flags
+     * (cohortadded / groupadded) truthful, without ever removing a membership.
+     *
+     * @param stdClass $answer The user's existing answer record.
+     * @param stdClass $option The chosen option (unchanged from the stored answer).
+     * @param stdClass $instance The pathway record.
+     * @param int $userid The user id.
+     * @return void
+     */
+    protected static function reconcile_membership(
+        stdClass $answer,
+        stdClass $option,
+        stdClass $instance,
+        int $userid
+    ): void {
+        global $CFG, $DB;
+
+        $changed = false;
+
+        if (!empty($instance->managecohorts) && $option->cohortid) {
+            require_once($CFG->dirroot . '/cohort/lib.php');
+            $cohortid = (int) $option->cohortid;
+            // Re-add only when genuinely missing, so we never disturb an existing
+            // membership. If we do re-add, this activity now owns it, so the flag
+            // is set to 1 regardless of its previous value.
+            if (
+                $DB->record_exists('cohort', ['id' => $cohortid])
+                    && !$DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid])
+            ) {
+                cohort_add_member($cohortid, $userid);
+                if (empty($answer->cohortadded)) {
+                    $answer->cohortadded = 1;
+                    $DB->set_field('pathway_answer', 'cohortadded', 1, ['id' => $answer->id]);
+                    $changed = true;
+                }
+            }
+        }
+
+        if (!empty($instance->managegroups) && $option->groupid) {
+            require_once($CFG->dirroot . '/group/lib.php');
+            $groupid = (int) $option->groupid;
+            if (
+                $DB->record_exists('groups', ['id' => $groupid])
+                    && !groups_is_member($groupid, $userid)
+            ) {
+                groups_add_member($groupid, $userid);
+                if (empty($answer->groupadded)) {
+                    $answer->groupadded = 1;
+                    $DB->set_field('pathway_answer', 'groupadded', 1, ['id' => $answer->id]);
+                    $changed = true;
+                }
+            }
+        }
+
+        if ($changed) {
+            self::$answercache[$instance->id . ':' . $userid] = $answer;
+        }
     }
 
     /**
